@@ -34,8 +34,9 @@ class LaneControllerNode(DTROS):
         self.params = dict()
         self.controller = PurePursuitLaneController(self.params)
         self.K = 0.2
-        self.Llim = 0.1
-        self.lanewidth: 0.23
+        self.Llim = 0.05
+        self.lanewidth = 0.23
+        self.threshold = 0.02
         # Construct publishers
         self.pub_car_cmd = rospy.Publisher("~car_cmd",
                                            Twist2DStamped,
@@ -48,7 +49,7 @@ class LaneControllerNode(DTROS):
 #                                                 self.cbLanePoses,
 #                                                 queue_size=1)
         
-        self.sub_filtered_seg_list = rospy.Subscriber("~segment_list_filtered",
+        self.sub_filtered_seg_list = rospy.Subscriber("/agent/lane_filter_node/seglist_filtered",
         						 SegmentList,
         						 self.cbSegListFiltered, 
         						 queue_size=1)
@@ -66,7 +67,7 @@ class LaneControllerNode(DTROS):
         car_control_msg = Twist2DStamped()
         car_control_msg.header = self.segment_msg.header
         
-        (v, omega) = self.controller.compute_control_action(segment_list, self.Llim, self.lanewidth, self.K)
+        (v, omega) = self.controller.compute_control_action(segment_list, self.Llim, self.lanewidth, self.K, self.threshold)
         car_control_msg.v = v
         car_control_msg.omega = omega
         self.publishCmd(car_control_msg)
