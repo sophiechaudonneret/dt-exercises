@@ -51,7 +51,7 @@ class PurePursuitLaneController:
     		             - lanewidth : largeur de la voie (pour calculer delta_d)
     		sorie :      - follow_point : array avec les coordonnees du points a suivre
     	"""
-    	delta_d = lanewidth*0.5
+    	delta_d = lanewidth/2
     	follow_point = np.array([0.0,0.0])
     	length_max = 0
     	for segment in segments:
@@ -71,9 +71,48 @@ class PurePursuitLaneController:
 						follow_point[1] = x_c+n_hat[1]*lane_width/2
 						length_max = length
 	return(follow_point)
+	
+
+    def get_normal_vector(self,segment):
+    	p1 = np.array([segment.points[0].x, segment.points[0].y])
+    	p2 = np.array([segment.points[1].x, segment.points[1].y])
+    	t_hat = (p2 - p1) / np.linalg.norm(p2 - p1)
+    	if segment.color == segment.YELLOW:
+    		if t_hat[0]<t_hat[1]: #line is more along the x axis (unlikelym only in turns)
+    			if t_hat[0]>0:
+    				n_hat = np.array([-t_hat[1], t_hat[0]])
+    			else:
+    				n_hat = np.array([t_hat[1], -t_hat[0]])
+    		else: #line is along the y axis (more likely, straight lines)
+    			if t_hat[1]>0:
+    				n_hat = np.array([t_hat[1], -t_hat[0]])
+    			else:
+    				n_hat = np.array([-t_hat[1], t_hat[0]])
+    	elif segment.color == segment.WHITE:
+    		if t_hat[0]<t_hat[1]: #line is more along the x axis (unlikelym only in turns)
+    			if t_hat[0]>0:
+    				n_hat = np.array([t_hat[1], -t_hat[0]])
+    			else:
+    				n_hat = np.array([-t_hat[1], t_hat[0]])
+    		else: #line is along the y axis (more likely, straight lines)
+    			if t_hat[1]>0:
+    				n_hat = np.array([-t_hat[1], t_hat[0]])
+    			else:
+    				n_hat = np.array([t_hat[1], -t_hat[0]])
+    	else:
+    		n_hat = None
+    	return(n_hat)
     	
+    def get_center_segment(self, segment):
+    	x_c = (segment.points[0].x+segment.points[1].x)/2
+    	y_c = (segment.points[0].y+segment.points[1].y)/2
+    	center = np.array([x_c,y_c])
+    	return(center)
     	
-    		
+    def get_distance(self,point):
+    	d = sqrt(point[0]**2+point[0]**2)
+    	return(d)
+    	
 	
 
 
