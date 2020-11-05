@@ -67,6 +67,8 @@ class LaneControllerNode(DTROS):
         car_control_msg.header = self.segment_msg.header
 
         (v, omega) = self.controller.compute_control_action(self.segment_msg, self.Llim, self.lanewidth, self.K, self.threshold)
+#        v = 1
+#        omega = 0
         car_control_msg.v = v
         car_control_msg.omega = omega
         self.publishCmd(car_control_msg)
