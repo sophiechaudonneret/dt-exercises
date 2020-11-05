@@ -58,16 +58,15 @@ class LaneControllerNode(DTROS):
 
 
     def cbSegListFiltered(self, segment_list_msg):
-    	"""Callback receiving filtered segment list message
-    	Args:
-    	    segment_list_msg (:obj:`SegmentList`): message containing a list of filtered valid segments.
-    	"""
-    	self.segment_msg = segment_list_msg
-    	
+        """Callback receiving filtered segment list message
+        Args:
+            segment_list_msg (:obj:`SegmentList`): message containing a list of filtered valid segments.
+        """
+        self.segment_msg = segment_list_msg
         car_control_msg = Twist2DStamped()
         car_control_msg.header = self.segment_msg.header
-        
-        (v, omega) = self.controller.compute_control_action(segment_list, self.Llim, self.lanewidth, self.K, self.threshold)
+
+        (v, omega) = self.controller.compute_control_action(self.segment_msg, self.Llim, self.lanewidth, self.K, self.threshold)
         car_control_msg.v = v
         car_control_msg.omega = omega
         self.publishCmd(car_control_msg)
