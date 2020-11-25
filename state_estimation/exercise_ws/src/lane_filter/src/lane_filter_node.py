@@ -55,6 +55,7 @@ class LaneFilterNode(DTROS):
         self.last_update_stamp = self.t_last_update
 
         self.filter.wheel_radius = rospy.get_param(f"/{veh}/kinematics_node/radius")
+        self.filter.baseline = rospy.get_param(f"/{veh}/kinematics_node/baseline")
 
         # Subscribers
         self.sub_segment_list = rospy.Subscriber("~segment_list",
@@ -97,6 +98,7 @@ class LaneFilterNode(DTROS):
         rospy.Timer(rospy.Duration(1/self._predict_freq), self.cbPredict)
 
         self.bridge = CvBridge()
+        self.log('lane_filter_node initialized !')
 
     def cbProcessLeftEncoder(self, left_encoder_msg):
         if not self.filter.initialized:
@@ -120,6 +122,10 @@ class LaneFilterNode(DTROS):
             return
 
         self.filter.predict(dt, self.left_encoder_ticks_delta, self.right_encoder_ticks_delta)
+        self.log('encoder data')
+        self.log(str(self.left_encoder_ticks_delta))
+        self.log(str(self.right_encoder_ticks_delta))
+        self.log('Predict :')
         self.left_encoder_ticks += self.left_encoder_ticks_delta
         self.right_encoder_ticks += self.right_encoder_ticks_delta
         self.left_encoder_ticks_delta = 0
@@ -142,7 +148,16 @@ class LaneFilterNode(DTROS):
         timestamp_before_processing = rospy.Time.now()
 
         # Step 2: update
-        self.filter.update(segment_list_msg.segments)
+        d_max, phi_max, P = self.filter.update(segment_list_msg.segments)
+        # string = str(SizeV)
+        self.loginfo('Size Matrix :')
+        matrix = self.filter.getSizes()
+        self.loginfo(str(matrix))
+        self.log('Update')
+        # string = str(SizeK)
+        # self.log(string)
+        # string = str(np.shape(P))
+        # self.log(string)
 
         self.publishEstimate(segment_list_msg)
 
@@ -154,14 +169,20 @@ class LaneFilterNode(DTROS):
         # build lane pose message to send
         lanePose = LanePose()
         lanePose.header.stamp = self.last_update_stamp
-        lanePose.d = belief['mean'][0]
-        lanePose.phi = belief['mean'][1]
+        lanePose.d = belief['mean'][0][0]
+        lanePose.phi = belief['mean'][1][0]
         lanePose.d_phi_covariance = [belief['covariance'][0][0],
                                      belief['covariance'][0][1],
                                      belief['covariance'][1][0],
                                      belief['covariance'][1][1]]
         lanePose.in_lane = True
         lanePose.status = lanePose.NORMAL
+        # string = str('Pose estimate : \n d=%f, \n phi=%f' %(lanePose.d, lanePose.phi))
+        string = str(belief['mean'])
+        self.log('LanePose')
+        self.log(string)
+        cov = str(lanePose.d_phi_covariance)
+        self.log(cov)
 
         self.pub_lane_pose.publish(lanePose)
         if segment_list_msg is not None:
