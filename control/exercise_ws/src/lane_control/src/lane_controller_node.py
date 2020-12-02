@@ -30,6 +30,7 @@ class LaneControllerNode(DTROS):
         ~omega_ff (:obj:`float`): Feedforward part of controller
         ~verbose (:obj:`bool`): Verbosity level (0,1,2)
         ~stop_line_slowdown (:obj:`dict`): Start and end distances for slowdown at stop lines
+
     Publisher:
         ~car_cmd (:obj:`Twist2DStamped`): The computed control action
     Subscribers:
@@ -128,7 +129,7 @@ class LaneControllerNode(DTROS):
                                                                  self.cbAllPoses,
                                                                  "intersection_navigation",
                                                                  queue_size=1)
-        self.sub_wheels_cmd_executed = rospy.Subscriber("~wheels_cmd_executed",
+        self.sub_wheels_cmd_executed = rospy.Subscriber("~wheels_cmd",
                                                         WheelsCmdStamped,
                                                         self.cbWheelsCmdExecuted,
                                                         queue_size=1)
@@ -146,6 +147,7 @@ class LaneControllerNode(DTROS):
     def cbObstacleStopLineReading(self,msg):
         """
         Callback storing the current obstacle distance, if detected.
+
         Args:
             msg(:obj:`StopLineReading`): Message containing information about the virtual obstacle stopline.
         """
@@ -155,6 +157,7 @@ class LaneControllerNode(DTROS):
 
     def cbStopLineReading(self, msg):
         """Callback storing current distance to the next stopline, if one is detected.
+
         Args:
             msg (:obj:`StopLineReading`): Message containing information about the next stop line.
         """
@@ -176,7 +179,9 @@ class LaneControllerNode(DTROS):
 
     def cbAllPoses(self, input_pose_msg, pose_source):
         """Callback receiving pose messages from multiple topics.
+
         If the source of the message corresponds with the current wanted pose source, it computes a control command.
+
         Args:
             input_pose_msg (:obj:`LanePose`): Message containing information about the current lane pose.
             pose_source (:obj:`String`): Source of the message, specified in the subscriber.
@@ -191,6 +196,7 @@ class LaneControllerNode(DTROS):
 
     def cbWheelsCmdExecuted(self, msg_wheels_cmd):
         """Callback that reports if the requested control action was executed.
+
         Args:
             msg_wheels_cmd (:obj:`WheelsCmdStamped`): Executed wheel commands
         """
@@ -198,6 +204,7 @@ class LaneControllerNode(DTROS):
 
     def publishCmd(self, car_cmd_msg):
         """Publishes a car command message.
+
         Args:
             car_cmd_msg (:obj:`Twist2DStamped`): Message containing the requested control action.
         """
@@ -205,7 +212,9 @@ class LaneControllerNode(DTROS):
 
     def getControlAction(self, pose_msg):
         """Callback that receives a pose message and updates the related control command.
+
         Using a controller object, computes the control action using the current pose estimate.
+
         Args:
             pose_msg (:obj:`LanePose`): Message containing information about the current lane pose.
         """
@@ -233,14 +242,16 @@ class LaneControllerNode(DTROS):
             if self.obstacle_stop_line_detected:
                 v, omega = self.controller.compute_control_action(d_err, phi_err, dt, wheels_cmd_exec, self.obstacle_stop_line_distance)
                 #TODO: This is a temporarily fix to avoid vehicle image detection latency caused unable to stop in time.
-                v = v*0.75
-                omega = omega*0.75
+                v = v*0.25
+                omega = omega*0.25
 
             else:
                 v, omega = self.controller.compute_control_action(d_err, phi_err, dt, wheels_cmd_exec, self.stop_line_distance)
 
             # For feedforward action (i.e. during intersection navigation)
             omega += self.params['~omega_ff']
+            omega = -omega
+            
 
         # Initialize car control msg, add header from input message
         car_control_msg = Twist2DStamped()
@@ -249,6 +260,10 @@ class LaneControllerNode(DTROS):
         # Add commands to car message
         car_control_msg.v = v
         car_control_msg.omega = omega
+        self.log('omega :')
+        self.log(str(omega))
+        self.log('v :')
+        self.log(str(v))
 
         self.publishCmd(car_control_msg)
         self.last_s = current_s
