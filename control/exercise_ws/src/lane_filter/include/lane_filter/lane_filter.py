@@ -1,25 +1,50 @@
 
 from collections import OrderedDict
-from scipy.stats import multivariate_normal
+
+from scipy.stats import multivariate_normal, entropy
+
+# from duckietown_utils.parameters import Configurable
+
 import numpy as np
+
+# from .lane_filter_interface import LaneFilterInterface
+
+#from .visualization import plot_phi_d_diagram_bgr
+
 from scipy.ndimage.filters import gaussian_filter
-from math import floor, sqrt, pi
+from math import floor, sqrt
+import copy
 
 
-
-class LaneFilterHistogramKF():
+class LaneFilterHistogram():
     """ Generates an estimate of the lane pose.
 
-    TODO: Fill in the details
+
+    Creates and maintain a histogram grid filter to estimate the lane pose. 
+    Lane pose is defined as the tuple (`d`, `phi`) : lateral deviation and angulare deviation from the center of the lane.
+
+    Predict step : Uses the estimated linear and angular velocities to predict the change in the lane pose.
+    Update Step : The filter receives a segment list. For each segment, it extracts the corresponding lane pose "votes", 
+    and adds it to the corresponding part of the histogram.
+
+    Best estimate correspond to the slot of the histogram with the highest voted value.
 
     Args:
         configuration (:obj:`List`): A list of the parameters for the filter
 
     """
 
+    LOST = 'lost'
+    GOOD = 'good'
+    STRUGGLING = 'struggling'
+
+    POSSIBLE_STATUSES = [LOST, GOOD, STRUGGLING]
+
+    ESTIMATE_DATATYPE = np.dtype([('phi', 'float64'),
+                                  ('d', 'float64')])
+
     def __init__(self, **kwargs):
         param_names = [
-            # TODO all the parameters in the default.yaml should be listed here.
             'mean_d_0',
             'mean_phi_0',
             'sigma_d_0',
@@ -46,47 +71,104 @@ class LaneFilterHistogramKF():
             assert p_name in kwargs
             setattr(self, p_name, kwargs[p_name])
 
-        self.mean_0 = np.array([[self.mean_d_0], [self.mean_phi_0]])
-        self.cov_0 = np.array([[self.sigma_d_0, 0], [0, self.sigma_phi_0]])
+        self.d, self.phi = np.mgrid[self.d_min:self.d_max:self.delta_d,
+                                    self.phi_min:self.phi_max:self.delta_phi]
 
-        self.belief = {'mean': self.mean_0, 'covariance': self.cov_0}
+        self.d_pcolor, self.phi_pcolor = np.mgrid[self.d_min:(self.d_max + self.delta_d):self.delta_d,
+                                                  self.phi_min:(self.phi_max + self.delta_phi):self.delta_phi]
 
-        self.encoder_resolution = 0
-        self.wheel_radius = 0.0
-        self.baseline = 0.0
-        self.initialized = False
-        self.Q = np.array([[0.5, 0], [0, 0.5]]) # Q is the noise covariance matrix --> to be tuned
-        self.matrix = 0
+        self.belief = np.empty(self.d.shape)
 
-    def predict(self, dt, left_encoder_delta, right_encoder_delta):
-        #TODO update self.belief based on right and left encoder data + kinematics
-        if not self.initialized:
+        self.mean_0 = [self.mean_d_0, self.mean_phi_0]
+        self.cov_0 = [[self.sigma_d_0, 0], [0, self.sigma_phi_0]]
+        self.cov_mask = [self.sigma_d_mask, self.sigma_phi_mask]
+
+        # Additional variables
+        self.red_to_white = False
+        self.use_yellow = True
+        self.range_est_min = 0
+        self.filtered_segments = []
+
+        self.initialize()
+
+
+
+    def initialize(self):
+        pos = np.empty(self.d.shape + (2,))
+        pos[:, :, 0] = self.d
+        pos[:, :, 1] = self.phi
+        RV = multivariate_normal(self.mean_0, self.cov_0)
+
+        self.belief = RV.pdf(pos)
+
+    def getStatus(self):
+        return self.GOOD
+
+    def get_entropy(self):
+        belief = self.belief
+        s = entropy(belief.flatten())
+        return s
+
+    def predict(self, dt, v, w):
+        delta_t = dt
+        d_t = self.d + v * delta_t * np.sin(self.phi)
+        phi_t = self.phi + w * delta_t
+
+        p_belief = np.zeros(self.belief.shape)
+
+        # there has got to be a better/cleaner way to do this - just applying the process model to translate each cell value
+        for i in range(self.belief.shape[0]):
+            for j in range(self.belief.shape[1]):
+                if self.belief[i, j] > 0:
+                    if d_t[i, j] > self.d_max or d_t[i, j] < self.d_min or phi_t[i, j] < self.phi_min or phi_t[i, j] > self.phi_max:
+                        continue
+
+                    i_new = int(
+                        floor((d_t[i, j] - self.d_min) / self.delta_d))
+                    j_new = int(
+                        floor((phi_t[i, j] - self.phi_min) / self.delta_phi))
+
+                    p_belief[i_new, j_new] += self.belief[i, j]
+
+        s_belief = np.zeros(self.belief.shape)
+        gaussian_filter(p_belief, self.cov_mask,
+                        output=s_belief, mode='constant')
+
+        if np.sum(s_belief) == 0:
             return
-        d_belief = self.belief['mean'][0][0]
-        phi_belief = self.belief['mean'][1][0]
-        cov_belief = self.belief['covariance']
-        alpha = self.encoder_resolution / (2*pi)
-        F = self.Fmatrix(alpha, left_encoder_delta, right_encoder_delta)
-        L = self.Lmatrix(alpha)
-        d_predicted = d_belief + np.sin(phi_belief) * self.wheel_radius * 0.5 * (left_encoder_delta + right_encoder_delta) / alpha
-        phi_predicted = phi_belief + self.wheel_radius * (left_encoder_delta - right_encoder_delta) / (self.baseline * alpha)
-        cov_predicted = F.dot(cov_belief.dot(F.transpose())) + L.dot(self.Q.dot(L.transpose()))
-        self.belief['mean'] = np.array([[d_predicted], [phi_predicted]])
-        self.belief['covariance'] = cov_predicted
+        self.belief = s_belief / np.sum(s_belief)
 
+    # prepare the segments for the creation of the belief arrays
+    def prepareSegments(self, segments):
+        segmentsArray = []
+        self.filtered_segments = []
+        for segment in segments:
+            # Optional transform from RED to WHITE
+            if self.red_to_white and segment.color == segment.RED:
+                segment.color = segment.WHITE
 
-    def Fmatrix(self, alpha, left_encoder_data, right_encoder_data):
-        F = np.eye((2))
-        F[0, 1] = np.cos(self.belief['mean'][1][0]) * self.wheel_radius * (left_encoder_data + right_encoder_data) * 0.5 / alpha
-        return F
+            # Optional filtering out YELLOW
+            if not self.use_yellow and segment.color == segment.YELLOW:
+                continue
 
-    def Lmatrix(self, alpha):
-        L = np.zeros((2, 2))
-        L[0, 0] = np.cos(self.belief['mean'][1][0]) * self.wheel_radius * 0.5 / alpha
-        L[0, 1] = np.cos(self.belief['mean'][1][0]) * self.wheel_radius * 0.5 / alpha
-        L[1, 0] = self.wheel_radius / (self.baseline * alpha)
-        L[1, 1] = self.wheel_radius / (self.baseline * alpha)
-        return L
+            # we don't care about RED ones for now
+            if segment.color != segment.WHITE and segment.color != segment.YELLOW:
+                continue
+            # filter out any segments that are behind us
+            if segment.points[0].x < 0 or segment.points[1].x < 0:
+                continue
+
+            self.filtered_segments.append(segment)
+            # only consider points in a certain range from the Duckiebot for the position estimation
+            point_range = self.getSegmentDistance(segment)
+            if point_range < self.range_est and point_range > self.range_est_min:
+                segmentsArray.append(segment)
+                # print functions to help understand the functionality of the code
+                # print 'Adding segment to segmentsRangeArray[0] (Range: %s < 0.3)' % (point_range)
+                # print 'Printout of last segment added: %s' % self.getSegmentDistance(segmentsRangeArray[0][-1])
+                # print 'Length of segmentsRangeArray[0] up to now: %s' % len(segmentsRangeArray[0])
+
+        return segmentsArray
 
     def update(self, segments):
         # prepare the segments for each belief array
@@ -95,124 +177,18 @@ class LaneFilterHistogramKF():
 
         measurement_likelihood = self.generate_measurement_likelihood(
             segmentsArray)
-        # self.matrix = measurement_likelihood
-        # parameter measurement as gaussian --> find mean and covariance matrix
+
         if measurement_likelihood is not None:
-            # mean is the maximum value in the histogram
-            maxids = np.unravel_index(measurement_likelihood.argmax(), measurement_likelihood.shape)  # find max index
-            d_mean = self.d_min + (maxids[0] + 0.5) * self.delta_d  # compute corresponding d
-            phi_mean = self.phi_min + (maxids[1] + 0.5) * self.delta_phi  # compute corresponding phi
-            mean_vec = np.array([[d_mean], [phi_mean]])  # mean vector --> our measured estimate
-            # sigma = self.getSigmaEstimate(measurement_likelihood, mean_vec)  # our estimated noise matrix
-            i_min, j_min, i_max, j_max = self.defineBondarySigma(measurement_likelihood, maxids)
-            sigma = self.getSigmaMatrix(measurement_likelihood, mean_vec, i_min, j_min, i_max, j_max)
-            if np.linalg.matrix_rank(sigma) != 2:
-                sigma = np.array([[1, 0.1], [0.1, 1]])
-            self.matrix = measurement_likelihood
-
-            # TODO: Apply the update equations for the Kalman Filter to self.belief
-            X_predicted = self.belief['mean']
-            P_predicted = self.belief['covariance']
-            H = np.eye((2))
-            M = np.eye((2))
-            V = H.dot(P_predicted.dot(H.transpose())) + M.dot(sigma.dot(M.transpose()))
-            K = P_predicted.dot(np.dot(H.transpose(), np.linalg.inv(V)))
-            X_updated = X_predicted + K.dot((mean_vec-X_predicted))
-            P_updated = P_predicted - K.dot(H.dot(P_predicted))
-            self.belief['mean'] = X_updated
-            # self.belief['mean'] = mean_vec
-            self.belief['covariance'] = P_updated
-            # return V.shape(), K.shape(), P_predicted.shape()
-            return d_mean, phi_mean, sigma
-        else:
-            return None, None, None
-
-    def getSizes(self):
-        return np.shape(self.matrix)
-
-    # def defineBondarySigma(self, distribution_matrix, maxids):
-    #     # mean is the maximum value in the histogram
-    #     window_size = [5, 5]
-    #     matrix_size = np.shape(distribution_matrix)
-    #     new_matrix = np.zeros_like(distribution_matrix)
-    #     new_matrix[max(maxids[0]-window_size[0],0):min(maxids[0]+window_size[0],matrix_size[0]),max(maxids[1]-window_size[1],0):min(maxids[1]+window_size[1],matrix_size[1])] \
-    #         = distribution_matrix[max(maxids[0]-window_size[0],0):min(maxids[0]+window_size[0],matrix_size[0]),max(maxids[1]-window_size[1],0):min(maxids[1]+window_size[1],matrix_size[1])]
-    #     return new_matrix
-
-    def defineBondarySigma(self, distribution_matrix, maxids):
-        # mean is the maximum value in the histogram
-        window_size = [5, 5]
-        matrix_size = np.shape(distribution_matrix)
-        i_min = max(maxids[0]-window_size[0],0)
-        j_min = max(maxids[1]-window_size[1],0)
-        i_max = min(maxids[0]+window_size[0],matrix_size[0])
-        j_max = min(maxids[1]+window_size[1],matrix_size[1])
-        return i_min, j_min, i_max, j_max
-
-    # def getSigmaEstimate(self, distribution_matrix, mean_value):
-    #     sigma = self.getSigmaMatrix(distribution_matrix, mean_value)
-    #     if np.linalg.matrix_rank(sigma) == 2:
-    #         num_outliers = 0
-    #         outliers = 100
-    #         while outliers > 0:
-    #             distribution_matrix, outliers = self.RejectOutliersMahalanobis(distribution_matrix, mean_value, sigma)
-    #             num_outliers += outliers
-    #             sigma_temp = self.getSigmaMatrix(distribution_matrix, mean_value)
-    #             if np.linalg.matrix_rank(sigma_temp)==2:
-    #                 sigma = sigma_temp
-    #     else:
-    #         # only case occupied --> not enough data --> high covariance matrix to trust the wheel odometry
-    #         sigma = np.array([[100, 0], [0, 100]])
-    #     return sigma
-
-    # def getSigmaMatrix(self, distribution_matrix, mean_value):
-    #     sigma = np.zeros((2, 2))
-    #     for i in range(distribution_matrix.shape[0]):
-    #         d_i = self.d_min + (i + 0.5) * self.delta_d
-    #         for j in range(distribution_matrix.shape[1]):
-    #             phi_i = self.phi_min + (j + 0.5) * self.delta_phi
-    #             X = np.array([[d_i], [phi_i]])-mean_value
-    #             sigma += distribution_matrix[i, j] * X.dot(np.transpose(X))
-    #     sigma = sigma/np.sum(distribution_matrix)
-    #     return sigma
-
-    def getSigmaMatrix(self, distribution_matrix, mean_value, i_min, j_min, i_max, j_max):
-        sigma = np.zeros((2, 2))
-        for i in range(i_min, i_max):
-            d_i = self.d_min + (i + 0.5) * self.delta_d
-            for j in range(j_min, j_max):
-                phi_i = self.phi_min + (j + 0.5) * self.delta_phi
-                X = np.array([[d_i], [phi_i]])-mean_value
-                sigma += distribution_matrix[i, j] * X.dot(np.transpose(X))
-        sigma = sigma/np.sum(distribution_matrix[i_min:i_max,j_min:j_max])
-        return sigma
-    # def RejectOutliersMahalanobis(self, distribution_matrix, mean_value, sigma):
-    #     outliers = 0
-    #     for i in range(distribution_matrix.shape[0]):
-    #         d_i = self.d_min + (i + 0.5) * self.delta_d
-    #         for j in range(distribution_matrix.shape[1]):
-    #             phi_i = self.phi_min + (j + 0.5) * self.delta_phi
-    #             if distribution_matrix[i, j] != 0:
-    #                 X = np.array([[d_i], [phi_i]]) - mean_value
-    #                 Mahal = np.dot(np.transpose(X), np.dot(np.linalg.inv(sigma), X))
-    #                 if Mahal > 12:
-    #                     distribution_matrix[i, j] = 0
-    #                     outliers += 1
-    #     return distribution_matrix, outliers
-
-    def getEstimate(self):
-        return self.belief
+            self.belief = np.multiply(self.belief, measurement_likelihood)
+            if np.sum(self.belief) == 0:
+                self.belief = measurement_likelihood
+            else:
+                self.belief = self.belief / np.sum(self.belief)
 
     def generate_measurement_likelihood(self, segments):
 
-        if len(segments) == 0:
-            return None
-
-        grid = np.mgrid[self.d_min:self.d_max:self.delta_d,
-                                    self.phi_min:self.phi_max:self.delta_phi]
-
         # initialize measurement likelihood to all zeros
-        measurement_likelihood = np.zeros(grid[0].shape)
+        measurement_likelihood = np.zeros(self.d.shape)
 
         for segment in segments:
             d_i, phi_i, l_i, weight = self.generateVote(segment)
@@ -227,16 +203,27 @@ class LaneFilterHistogramKF():
 
         if np.linalg.norm(measurement_likelihood) == 0:
             return None
-
-        # lastly normalize so that we have a valid probability density function
-
         measurement_likelihood = measurement_likelihood / \
             np.sum(measurement_likelihood)
-
         return measurement_likelihood
 
+    def getEstimate(self):
+        maxids = np.unravel_index(
+            self.belief.argmax(), self.belief.shape)
+        d_max = self.d_min + (maxids[0] + 0.5) * self.delta_d
+        phi_max = self.phi_min + (maxids[1] + 0.5) * self.delta_phi
 
+        return [d_max, phi_max]
 
+    def get_estimate(self):
+        d, phi = self.getEstimate()
+        res = OrderedDict()
+        res['d'] = d
+        res['phi'] = phi
+        return res
+
+    def getMax(self):
+        return self.belief.max()
 
 
     # generate a vote for one segment
@@ -294,23 +281,6 @@ class LaneFilterHistogramKF():
         y_c = (segment.points[0].y + segment.points[1].y) / 2
         return sqrt(x_c**2 + y_c**2)
 
-    # prepare the segments for the creation of the belief arrays
-    def prepareSegments(self, segments):
-        segmentsArray = []
-        self.filtered_segments = []
-        for segment in segments:
-
-            # we don't care about RED ones for now
-            if segment.color != segment.WHITE and segment.color != segment.YELLOW:
-                continue
-            # filter out any segments that are behind us
-            if segment.points[0].x < 0 or segment.points[1].x < 0:
-                continue
-
-            self.filtered_segments.append(segment)
-            # only consider points in a certain range from the Duckiebot for the position estimation
-            point_range = self.getSegmentDistance(segment)
-            if point_range < self.range_est:
-                segmentsArray.append(segment)
-
-        return segmentsArray
+#    def get_plot_phi_d(self, ground_truth=None):  # @UnusedVariable
+#        d, phi = self.getEstimate()
+#        return plot_phi_d_diagram_bgr(self, self.belief, phi=phi, d=d)

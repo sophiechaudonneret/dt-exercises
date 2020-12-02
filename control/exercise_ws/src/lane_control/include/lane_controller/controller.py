@@ -4,12 +4,9 @@ import numpy as np
 class LaneController:
     """
     The Lane Controller can be used to compute control commands from pose estimations.
-
     The control commands are in terms of linear and angular velocity (v, omega). The input are errors in the relative
     pose of the Duckiebot in the current lane.
-
     This implementation is a simple PI(D) controller.
-
     Args:
         ~v_bar (:obj:`float`): Nominal velocity in m/s
         ~k_d (:obj:`float`): Proportional term for lateral deviation
@@ -25,7 +22,6 @@ class LaneController:
         ~omega_ff (:obj:`float`): Feedforward part of controller
         ~verbose (:obj:`bool`): Verbosity level (0,1,2)
         ~stop_line_slowdown (:obj:`dict`): Start and end distances for slowdown at stop lines
-
     """
     def __init__(self, parameters):
         self.parameters = parameters
@@ -36,7 +32,6 @@ class LaneController:
 
     def update_parameters(self, parameters):
         """Updates parameters of LaneController object.
-
             Args:
                 parameters (:obj:`dict`): dictionary containing the new parameters for LaneController object.
         """
@@ -44,10 +39,8 @@ class LaneController:
 
     def compute_control_action(self, d_err, phi_err, dt, wheels_cmd_exec, stop_line_distance):
         """Main function, computes the control action given the current error signals.
-
         Given an estimate of the error, computes a control action (tuple of linear and angular velocity). This is done
         via a basic PI(D) controller with anti-reset windup logic.
-
         Args:
             d_err (:obj:`float`): error in meters in the lateral direction
             phi_err (:obj:`float`): error in radians in the heading direction
@@ -86,10 +79,8 @@ class LaneController:
 
     def compute_velocity(self, stop_line_distance):
         """Linearly decrease velocity if approaching a stop line.
-
         If a stop line is detected, the velocity is linearly decreased to achieve a better stopping position,
         otherwise the nominal velocity is returned.
-
         Args:
             stop_line_distance (:obj:`float`): distance of the stop line, None if not detected.
         """
@@ -116,10 +107,8 @@ class LaneController:
 
     def reset_if_needed(self, d_err, phi_err, wheels_cmd_exec):
         """Resets the integral error if needed.
-
         Resets the integral errors in `d` and `phi` if either the error sign changes, or if the robot is completely
         stopped (i.e. intersections).
-
         Args:
             d_err (:obj:`float`): error in meters in the lateral direction
             phi_err (:obj:`float`): error in radians in the heading direction
@@ -137,16 +126,13 @@ class LaneController:
     @staticmethod
     def adjust_integral(error, integral, bounds, resolution):
         """Bounds the integral error to avoid windup.
-
         Adjusts the integral error to remain in defined bounds, and cancels it if the error is smaller than the
         resolution of the error estimation.
-
         Args:
             error (:obj:`float`): current error value
             integral (:obj:`float`): current integral value
             bounds (:obj:`dict`): contains minimum and maximum value for the integral
             resolution (:obj:`float`): resolution of the error estimate
-
         Returns:
             integral (:obj:`float`): adjusted integral value
         """

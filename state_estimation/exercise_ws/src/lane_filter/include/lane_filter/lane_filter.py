@@ -77,7 +77,7 @@ class LaneFilterHistogramKF():
 
     def Fmatrix(self, alpha, left_encoder_data, right_encoder_data):
         F = np.eye((2))
-        F[0, 1] = np.cos(self.belief['mean'][1]) * self.wheel_radius * (left_encoder_data + right_encoder_data) * 0.5 / alpha
+        F[0, 1] = np.cos(self.belief['mean'][1][0]) * self.wheel_radius * (left_encoder_data + right_encoder_data) * 0.5 / alpha
         return F
 
     def Lmatrix(self, alpha):
@@ -100,12 +100,15 @@ class LaneFilterHistogramKF():
         if measurement_likelihood is not None:
             # mean is the maximum value in the histogram
             maxids = np.unravel_index(measurement_likelihood.argmax(), measurement_likelihood.shape)  # find max index
-            d_max = self.d_min + (maxids[0] + 0.5) * self.delta_d  # compute corresponding d
-            phi_max = self.phi_min + (maxids[1] + 0.5) * self.delta_phi  # compute corresponding phi
-            mean_vec = np.array([[d_max], [phi_max]])  # mean vector --> our measured estimate
-            sigma = self.getSigmaEstimate(measurement_likelihood, mean_vec)  # our estimated noise matrix
-            # sigma = self.getSigmaMatrix(measurement_likelihood, mean_vec)
-            self.matrix = sigma
+            d_mean = self.d_min + (maxids[0] + 0.5) * self.delta_d  # compute corresponding d
+            phi_mean = self.phi_min + (maxids[1] + 0.5) * self.delta_phi  # compute corresponding phi
+            mean_vec = np.array([[d_mean], [phi_mean]])  # mean vector --> our measured estimate
+            # sigma = self.getSigmaEstimate(measurement_likelihood, mean_vec)  # our estimated noise matrix
+            i_min, j_min, i_max, j_max = self.defineBondarySigma(measurement_likelihood, maxids)
+            sigma = self.getSigmaMatrix(measurement_likelihood, mean_vec, i_min, j_min, i_max, j_max)
+            if np.linalg.matrix_rank(sigma) != 2:
+                sigma = np.array([[1, 0.1], [0.1, 1]])
+            self.matrix = measurement_likelihood
 
             # TODO: Apply the update equations for the Kalman Filter to self.belief
             X_predicted = self.belief['mean']
@@ -114,59 +117,88 @@ class LaneFilterHistogramKF():
             M = np.eye((2))
             V = H.dot(P_predicted.dot(H.transpose())) + M.dot(sigma.dot(M.transpose()))
             K = P_predicted.dot(np.dot(H.transpose(), np.linalg.inv(V)))
-            X_updated = X_predicted + K.dot(mean_vec-X_predicted)
+            X_updated = X_predicted + K.dot((mean_vec-X_predicted))
             P_updated = P_predicted - K.dot(H.dot(P_predicted))
             self.belief['mean'] = X_updated
             # self.belief['mean'] = mean_vec
             self.belief['covariance'] = P_updated
             # return V.shape(), K.shape(), P_predicted.shape()
-            return d_max, phi_max, P_predicted
+            return d_mean, phi_mean, sigma
         else:
             return None, None, None
 
     def getSizes(self):
         return np.shape(self.matrix)
 
-    def getSigmaEstimate(self, distribution_matrix, mean_value):
-        sigma = self.getSigmaMatrix(distribution_matrix, mean_value)
-        if np.linalg.matrix_rank(sigma) == 2:
-            num_outliers = 0
-            outliers = 100
-            while outliers > 0:
-                distribution_matrix, outliers = self.RejectOutliersMahalanobis(distribution_matrix, mean_value, sigma)
-                num_outliers += outliers
-                sigma_temp = self.getSigmaMatrix(distribution_matrix, mean_value)
-                if np.linalg.matrix_rank(sigma_temp)==2:
-                    sigma = sigma_temp
-        else:
-            # only case occupied --> not enough data --> high covariance matrix to trust the wheel odometry
-            sigma = np.array([[100, 0], [0, 100]])
-        return sigma
+    # def defineBondarySigma(self, distribution_matrix, maxids):
+    #     # mean is the maximum value in the histogram
+    #     window_size = [5, 5]
+    #     matrix_size = np.shape(distribution_matrix)
+    #     new_matrix = np.zeros_like(distribution_matrix)
+    #     new_matrix[max(maxids[0]-window_size[0],0):min(maxids[0]+window_size[0],matrix_size[0]),max(maxids[1]-window_size[1],0):min(maxids[1]+window_size[1],matrix_size[1])] \
+    #         = distribution_matrix[max(maxids[0]-window_size[0],0):min(maxids[0]+window_size[0],matrix_size[0]),max(maxids[1]-window_size[1],0):min(maxids[1]+window_size[1],matrix_size[1])]
+    #     return new_matrix
 
-    def getSigmaMatrix(self, distribution_matrix, mean_value):
+    def defineBondarySigma(self, distribution_matrix, maxids):
+        # mean is the maximum value in the histogram
+        window_size = [5, 5]
+        matrix_size = np.shape(distribution_matrix)
+        i_min = max(maxids[0]-window_size[0],0)
+        j_min = max(maxids[1]-window_size[1],0)
+        i_max = min(maxids[0]+window_size[0],matrix_size[0])
+        j_max = min(maxids[1]+window_size[1],matrix_size[1])
+        return i_min, j_min, i_max, j_max
+
+    # def getSigmaEstimate(self, distribution_matrix, mean_value):
+    #     sigma = self.getSigmaMatrix(distribution_matrix, mean_value)
+    #     if np.linalg.matrix_rank(sigma) == 2:
+    #         num_outliers = 0
+    #         outliers = 100
+    #         while outliers > 0:
+    #             distribution_matrix, outliers = self.RejectOutliersMahalanobis(distribution_matrix, mean_value, sigma)
+    #             num_outliers += outliers
+    #             sigma_temp = self.getSigmaMatrix(distribution_matrix, mean_value)
+    #             if np.linalg.matrix_rank(sigma_temp)==2:
+    #                 sigma = sigma_temp
+    #     else:
+    #         # only case occupied --> not enough data --> high covariance matrix to trust the wheel odometry
+    #         sigma = np.array([[100, 0], [0, 100]])
+    #     return sigma
+
+    # def getSigmaMatrix(self, distribution_matrix, mean_value):
+    #     sigma = np.zeros((2, 2))
+    #     for i in range(distribution_matrix.shape[0]):
+    #         d_i = self.d_min + (i + 0.5) * self.delta_d
+    #         for j in range(distribution_matrix.shape[1]):
+    #             phi_i = self.phi_min + (j + 0.5) * self.delta_phi
+    #             X = np.array([[d_i], [phi_i]])-mean_value
+    #             sigma += distribution_matrix[i, j] * X.dot(np.transpose(X))
+    #     sigma = sigma/np.sum(distribution_matrix)
+    #     return sigma
+
+    def getSigmaMatrix(self, distribution_matrix, mean_value, i_min, j_min, i_max, j_max):
         sigma = np.zeros((2, 2))
-        for i in range(distribution_matrix.shape[0]):
+        for i in range(i_min, i_max):
             d_i = self.d_min + (i + 0.5) * self.delta_d
-            for j in range(distribution_matrix.shape[1]):
+            for j in range(j_min, j_max):
                 phi_i = self.phi_min + (j + 0.5) * self.delta_phi
                 X = np.array([[d_i], [phi_i]])-mean_value
                 sigma += distribution_matrix[i, j] * X.dot(np.transpose(X))
-        sigma = sigma/np.sum(distribution_matrix)
+        sigma = sigma/np.sum(distribution_matrix[i_min:i_max,j_min:j_max])
         return sigma
-
-    def RejectOutliersMahalanobis(self, distribution_matrix, mean_value, sigma):
-        outliers = 0
-        for i in range(distribution_matrix.shape[0]):
-            d_i = self.d_min + (i + 0.5) * self.delta_d
-            for j in range(distribution_matrix.shape[1]):
-                phi_i = self.phi_min + (j + 0.5) * self.delta_phi
-                if distribution_matrix[i, j] != 0:
-                    X = np.array([[d_i], [phi_i]]) - mean_value
-                    Mahal = np.dot(np.transpose(X), np.dot(np.linalg.inv(sigma), X))
-                    if Mahal > 12:
-                        distribution_matrix[i, j] = 0
-                        outliers += 1
-        return distribution_matrix, outliers
+    # def RejectOutliersMahalanobis(self, distribution_matrix, mean_value, sigma):
+    #     outliers = 0
+    #     for i in range(distribution_matrix.shape[0]):
+    #         d_i = self.d_min + (i + 0.5) * self.delta_d
+    #         for j in range(distribution_matrix.shape[1]):
+    #             phi_i = self.phi_min + (j + 0.5) * self.delta_phi
+    #             if distribution_matrix[i, j] != 0:
+    #                 X = np.array([[d_i], [phi_i]]) - mean_value
+    #                 Mahal = np.dot(np.transpose(X), np.dot(np.linalg.inv(sigma), X))
+    #                 if Mahal > 12:
+    #                     distribution_matrix[i, j] = 0
+    #                     outliers += 1
+    #     return distribution_matrix, outliers
 
     def getEstimate(self):
         return self.belief

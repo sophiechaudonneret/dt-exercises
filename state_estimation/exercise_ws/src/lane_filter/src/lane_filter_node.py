@@ -125,7 +125,7 @@ class LaneFilterNode(DTROS):
         self.log('encoder data')
         self.log(str(self.left_encoder_ticks_delta))
         self.log(str(self.right_encoder_ticks_delta))
-        self.log('Predict :')
+        self.log('Predict Step')
         self.left_encoder_ticks += self.left_encoder_ticks_delta
         self.right_encoder_ticks += self.right_encoder_ticks_delta
         self.left_encoder_ticks_delta = 0
@@ -150,10 +150,16 @@ class LaneFilterNode(DTROS):
         # Step 2: update
         d_max, phi_max, P = self.filter.update(segment_list_msg.segments)
         # string = str(SizeV)
-        self.loginfo('Size Matrix :')
+        # self.loginfo('Size Matrix :')
         matrix = self.filter.getSizes()
-        self.loginfo(str(matrix))
-        self.log('Update')
+        # self.loginfo(str(matrix))
+        self.log('Update step')
+        self.log('dmax')
+        self.log(str(d_max))
+        self.log('phi max')
+        self.log(str(phi_max))
+        self.log('sigma')
+        self.log(str(P))
         # string = str(SizeK)
         # self.log(string)
         # string = str(np.shape(P))
@@ -178,11 +184,11 @@ class LaneFilterNode(DTROS):
         lanePose.in_lane = True
         lanePose.status = lanePose.NORMAL
         # string = str('Pose estimate : \n d=%f, \n phi=%f' %(lanePose.d, lanePose.phi))
-        string = str(belief['mean'])
-        self.log('LanePose')
-        self.log(string)
-        cov = str(lanePose.d_phi_covariance)
-        self.log(cov)
+        # string = str(belief['mean'])
+        # self.log('LanePose')
+        # self.log(string)
+        # cov = str(lanePose.d_phi_covariance)
+        # self.log(cov)
 
         self.pub_lane_pose.publish(lanePose)
         if segment_list_msg is not None:
@@ -212,6 +218,8 @@ class LaneFilterNode(DTROS):
             # Create belief image and publish it
             ml = self.filter.generate_measurement_likelihood(segment_list_msg.segments)
             if ml is not None:
+                maxids = np.unravel_index(ml.argmax(), ml.shape)
+                ml[maxids[0],maxids[1]] = 1.0
                 ml_img = self.bridge.cv2_to_imgmsg(
                     np.array(255 * ml).astype("uint8"), "mono8")
                 ml_img.header.stamp = segment_list_msg.header.stamp
