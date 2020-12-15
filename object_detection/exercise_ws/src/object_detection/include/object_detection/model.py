@@ -1,3 +1,7 @@
+import torchvision
+import torch
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+from PIL import Image
 
 
 class NoGPUAvailable(Exception):
@@ -6,6 +10,7 @@ class NoGPUAvailable(Exception):
 class Wrapper():
     def __init__(self, model_file):
         # TODO Instantiate your model and other class instances here!
+        model = Model()
         # TODO Don't forget to set your model in evaluation/testing/production mode, and sending it to the GPU
         # TODO If no GPU is available, raise the NoGPUAvailable exception
         pass
@@ -26,7 +31,7 @@ class Wrapper():
         labels = []
         scores = []
         for img in batch_or_image:  # or simply pipe the whole batch to the model instead of using a loop!
-
+            img = Image.fromarray(img)
             box, label, score = self.model.predict(img) # TODO you probably need to send the image to a tensor, etc.
             boxes.append(box)
             labels.append(label)
@@ -36,6 +41,9 @@ class Wrapper():
 
 class Model():    # TODO probably extend a TF or Pytorch class!
     def __init__(self):
-        # TODO Instantiate your weights etc here!
-        pass
+        self.model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
+        # get number of input features for the classifier
+        in_features = self.model.roi_heads.box_predictor.cls_score.in_features
+        # replace the pre-trained head with a new one
+        self.model.roi_heads.box_predictor = FastRCNNPredictor(in_features, 5)
     # TODO add your own functions if need be!
