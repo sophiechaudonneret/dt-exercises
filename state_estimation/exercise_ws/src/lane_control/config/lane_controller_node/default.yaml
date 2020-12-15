@@ -1,0 +1,9 @@
+#lane_control/lane_controller_node
+
+## ADD CONFIGS HERE
+
+K: 0.3
+look_ahead_distance: 0.4
+
+K_theta: -5
+K_d: -6
