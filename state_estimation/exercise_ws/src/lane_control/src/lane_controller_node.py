@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 import rospy
+import os
 
 from duckietown.dtros import DTROS, NodeType, TopicType, DTParam, ParamType
 from duckietown_msgs.msg import Twist2DStamped, LanePose, WheelsCmdStamped, BoolStamped, FSMState, StopLineReading, SegmentList
@@ -52,7 +53,7 @@ class LaneControllerNode(DTROS):
                                                  self.cbLanePoses,
                                                  queue_size=1)
 
-        self.sub_segment_list = rospy.Subscriber("/agent/lane_filter_node/seglist_filtered",
+        self.sub_segment_list = rospy.Subscriber(f"/{os.environ['VEHICLE_NAME']}/lane_filter_node/seglist_filtered",
                                                  SegmentList,
                                                  self.cbSegmentList,
                                                  queue_size=1)
@@ -74,9 +75,9 @@ class LaneControllerNode(DTROS):
                 y_seg.append(segment)
         self.w_seg_list = w_seg
         self.y_seg_list = y_seg
-        self.log('sizes segment list')
-        self.log(str(len(w_seg)))
-        self.log(str(len(y_seg)))
+        # self.log('sizes segment list')
+        # self.log(str(len(w_seg)))
+        # self.log(str(len(y_seg)))
         
 
 
@@ -91,18 +92,12 @@ class LaneControllerNode(DTROS):
 
         car_control_msg = Twist2DStamped()
         car_control_msg.header = self.pose_msg.header
-        (v, omega) = self.pp_controller.computeControlAction(self.w_seg_list, self.y_seg_list)
-        # v = 0.1
-        # omega = 0
-        if omega is not None:
-            car_control_msg.omega = omega
-            car_control_msg.v = v
-        else : # proportional controller
-            car_control_msg.v = v / 4 # v_barre
-            car_control_msg.omega = self.K_theta* self.pose_msg.phi + self.K_d * self.pose_msg.d
-        self.log('v et omega')
-        self.log(str(car_control_msg.v))
-        self.log(str(car_control_msg.omega))
+        (v, omega) = self.pp_controller.computeControlAction(self.w_seg_list, self.y_seg_list, self.pose_msg.phi, self.pose_msg.d)
+        car_control_msg.omega = omega
+        car_control_msg.v = v
+        # self.log('v et omega')
+        # self.log(str(car_control_msg.v))
+        # self.log(str(car_control_msg.omega))
         self.publishCmd(car_control_msg)
 
 

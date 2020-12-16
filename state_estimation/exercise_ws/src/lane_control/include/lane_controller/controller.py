@@ -1,9 +1,5 @@
 import numpy as np
 
-class Point:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
 
 class PurePursuitLaneController:
     """
@@ -19,8 +15,11 @@ class PurePursuitLaneController:
         self.parameters = parameters
         self.look_ahead_distance = self.parameters['~look_ahead_distance']
         self.K = self.parameters['~K']
+        self.K_d = self.parameters['~K_d']
+        self.K_theta = self.parameters['~K_theta']
         self.enoughData = True
-        self.v_barre = 1
+        self.v_purepursuit = 0.8
+        self.v_prop = 0.2
         
 
 
@@ -35,17 +34,18 @@ class PurePursuitLaneController:
     def getCenterSegment(self,segment):
         x_c = (segment.points[0].x+ segment.points[1].x)/2
         y_c = (segment.points[0].y+ segment.points[1].y)/2
-        center = Point(x_c, y_c)
+        center = [x_c, y_c]
         return center
     
     def getMiddlePoint(self, w_point, y_point):
-        x_middle = 0.4 * w_point.x + 0.6 * y_point.x
-        y_middle = 0.4 * w_point.y + 0.6 * y_point.y
-        middle = Point(x_middle, y_middle)
+        # actually not the middle as the bot tends to go to the white lane (don't know why)
+        x_middle = 0.35 * w_point[0] + 0.65 * y_point[0]
+        y_middle = 0.35 * w_point[1] + 0.65 * y_point[1]
+        middle = [x_middle, y_middle]
         return middle
 
     def getDistance(self, point):
-        dist = np.sqrt(point.x ** 2 + point.y ** 2)
+        dist = np.sqrt(point[0] ** 2 + point[1] ** 2)
         return dist
 
     def getPotentialFollowPoints(self, w_seg, y_seg):
@@ -64,14 +64,14 @@ class PurePursuitLaneController:
     def getFollowPoint(self, w_pot_fp, y_pot_fp):
         if len(w_pot_fp) >= 2 and len(y_pot_fp) >= 2 :
             self.EnoughData = True
-            wfp = Point(0,0)
+            wfp = [0,0]
             dist = 10
             for point in w_pot_fp :
                 dist_temp = np.abs(self.getDistance(point) - self.look_ahead_distance)
                 if dist_temp <= dist :
                     dist = dist_temp
                     wfp = point
-            yfp = Point(0,0)
+            yfp = [0,0]
             dist = 10
             for point in y_pot_fp :
                 dist_temp = np.abs(self.getDistance(point) - self.look_ahead_distance)
@@ -86,14 +86,14 @@ class PurePursuitLaneController:
             return None, None
         
 
-    def computeControlAction(self, w_seg, y_seg):
+    def computeControlAction(self, w_seg, y_seg, phi, d):
         w_pot_fp, y_pot_fp = self.getPotentialFollowPoints(w_seg, y_seg)
         (fp, dist) = self.getFollowPoint(w_pot_fp, y_pot_fp)
         if self.EnoughData :
-            sin_alpha = fp.y / dist
-            v = self.v_barre
+            sin_alpha = fp[1] / dist
+            v = self.v_purepursuit
             omega = (sin_alpha / self.K)
         else :
-            v = self.v_barre
-            omega = None
+            v = self.v_prop
+            omega = self.K_theta* phi + self.K_d * d
         return v, omega

@@ -2,8 +2,10 @@
 
 ## ADD CONFIGS HERE
 
-K: 0.3
+# pure pursuit controller
 look_ahead_distance: 0.4
+K: 0.3
 
-K_theta: -5
+# proportional controller (when not enough data for pp)
+K_theta: -4
 K_d: -6

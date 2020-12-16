@@ -15,8 +15,11 @@ class PurePursuitLaneController:
         self.parameters = parameters
         self.look_ahead_distance = self.parameters['~look_ahead_distance']
         self.K = self.parameters['~K']
+        self.K_d = self.parameters['~K_d']
+        self.K_theta = self.parameters['~K_theta']
         self.enoughData = True
-        self.v_barre = 0.8
+        self.v_purepursuit = 0.8
+        self.v_prop = 0.2
         
 
 
@@ -35,8 +38,9 @@ class PurePursuitLaneController:
         return center
     
     def getMiddlePoint(self, w_point, y_point):
-        x_middle = 0.4 * w_point[0] + 0.6 * y_point[0]
-        y_middle = 0.4 * w_point[1] + 0.6 * y_point[1]
+        # actually not the middle as the bot tends to go to the white lane (don't know why)
+        x_middle = 0.35 * w_point[0] + 0.65 * y_point[0]
+        y_middle = 0.35 * w_point[1] + 0.65 * y_point[1]
         middle = [x_middle, y_middle]
         return middle
 
@@ -82,14 +86,14 @@ class PurePursuitLaneController:
             return None, None
         
 
-    def computeControlAction(self, w_seg, y_seg):
+    def computeControlAction(self, w_seg, y_seg, phi, d):
         w_pot_fp, y_pot_fp = self.getPotentialFollowPoints(w_seg, y_seg)
         (fp, dist) = self.getFollowPoint(w_pot_fp, y_pot_fp)
         if self.EnoughData :
             sin_alpha = fp[1] / dist
-            v = self.v_barre
+            v = self.v_purepursuit
             omega = (sin_alpha / self.K)
         else :
-            v = self.v_barre
-            omega = None
+            v = self.v_prop
+            omega = self.K_theta* phi + self.K_d * d
         return v, omega
