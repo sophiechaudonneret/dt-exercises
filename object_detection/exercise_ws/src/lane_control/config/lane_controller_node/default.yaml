@@ -7,5 +7,5 @@ look_ahead_distance: 0.4
 K: 0.3
 
 # proportional controller (when not enough data for pp)
-K_theta: -3.5
-K_d: -5
+K_theta: -4
+K_d: -6

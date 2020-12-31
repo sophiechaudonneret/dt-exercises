@@ -76,7 +76,7 @@ class LaneFilterHistogramKF():
         L = np.eye(2)
         d_predicted = d_belief + np.sin(phi_belief) * self.wheel_radius * 0.5 * (left_encoder_delta + right_encoder_delta) / alpha
         phi_predicted = phi_belief + self.wheel_radius * (right_encoder_delta - left_encoder_delta) / (self.baseline * alpha)
-        cov_predicted = F.dot(cov_belief.dot(F.transpose())) + L.dot(self.Q.dot(L.transpose()))
+        # cov_predicted = F.dot(cov_belief.dot(F.transpose())) + L.dot(self.Q.dot(L.transpose()))
         cov_predicted = F @ cov_belief @ F.T + L @ self.Q @ L.T
         self.belief['mean'] = np.array([[d_predicted], [phi_predicted]])
         self.belief['covariance'] = cov_predicted

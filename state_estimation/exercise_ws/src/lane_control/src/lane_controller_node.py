@@ -36,8 +36,8 @@ class LaneControllerNode(DTROS):
         self.params = dict()
         self.params['~look_ahead_distance'] = rospy.get_param('~look_ahead_distance', None)
         self.params['~K'] = rospy.get_param('~K', None)
-        self.K_theta = rospy.get_param('~K_theta', None)
-        self.K_d = rospy.get_param('~K_d', None)
+        self.params['~K_theta'] = rospy.get_param('~K_theta', None)
+        self.params['~K_d'] = rospy.get_param('~K_d', None)
 
         self.pp_controller = PurePursuitLaneController(self.params)
         self.log('Controller Publisher...')

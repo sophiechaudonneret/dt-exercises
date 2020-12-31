@@ -9,8 +9,8 @@ import transforms as T
 from engine import train_one_epoch, evaluate
 import utils # ???
 
-MODEL_PATH="../exercise_ws/src/object_detection/include/object_detection"
-sys.path.insert(1,MODEL_PATH)
+MODEL_PATH="../exercise_ws/src/object_detection/include/object_detection/"
+sys.path.append(MODEL_PATH)
 from model import Model
 
 class Dataset(object):
@@ -104,7 +104,8 @@ def main():
                                                    gamma=0.1)
 
     # let's train it for 100 epochs
-    num_epochs = 100
+    num_epochs = 1
+    print(num_epochs)
 
     for epoch in range(num_epochs):
         # train for one epoch, printing every 10 iterations
@@ -113,7 +114,12 @@ def main():
         lr_scheduler.step()
         print(f"Epoch {epoch}")
 
+    print(f"saving model to {MODEL_PATH}/weights")
+    torch.save(model.model.state_dict(), f"{MODEL_PATH}/weights")
     print("That's it!")
+
+
+
 
 def get_transform(train):
     transforms = []

@@ -18,7 +18,7 @@ class PurePursuitLaneController:
         self.K_d = self.parameters['~K_d']
         self.K_theta = self.parameters['~K_theta']
         self.enoughData = True
-        self.v_purepursuit = 0.8
+        self.v_purepursuit = 0.6
         self.v_prop = 0.2
         
 
@@ -39,8 +39,8 @@ class PurePursuitLaneController:
     
     def getMiddlePoint(self, w_point, y_point):
         # actually not the middle as the bot tends to go to the white lane (don't know why)
-        x_middle = 0.35 * w_point[0] + 0.65 * y_point[0]
-        y_middle = 0.35 * w_point[1] + 0.65 * y_point[1]
+        x_middle = 0.4 * w_point[0] + 0.6 * y_point[0]
+        y_middle = 0.4 * w_point[1] + 0.6 * y_point[1]
         middle = [x_middle, y_middle]
         return middle
 

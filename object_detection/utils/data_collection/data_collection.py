@@ -16,9 +16,9 @@ def save_npz(img, boxes, classes):
         np.savez(f"{DATASET_DIR}/{npz_index}.npz", *(img, boxes, classes))
         npz_index += 1
 
-def clean_segmented_image(seg_img):
+def clean_segmented_image(seg_img, width, height):
     # cv.imshow('original image', seg_img)
-    # cv.waitKey(1)
+    # cv.waitKey(0)
     mask = np.zeros_like(seg_img)
     # TODO
     colors = {}
@@ -34,15 +34,15 @@ def clean_segmented_image(seg_img):
         im = im[:,:,0] & im[:,:,1] & im[:,:,2]
         im = np.multiply(im, 1.0)
         im = np.uint8(im)
-        boxes, labels, mask = findBoxes(im, boxes, labels, i, seg_img, mask)
+        boxes, labels, mask = findBoxes(im, boxes, labels, i, seg_img, mask, width, height)
     mask = plotWithBoundingBoxes(mask, boxes, labels)
     # cv.imshow('image sans snow', mask)
-    # cv.waitKey(1)
+    # cv.waitKey(0)
     # # Tip: use either of the two display functions found in util.py to ensure that your cleaning produces clean masks
     # # (ie masks akin to the ones from PennFudanPed) before extracting the bounding boxes
     return boxes, labels
 
-def findBoxes(im, boxes, labels, class_label, segmented_im, mask):
+def findBoxes(im, boxes, labels, class_label, segmented_im, mask, width, height):
     num_labels, labels_im = cv.connectedComponents(im)
     obj_ids = np.unique(labels_im)
     obj_ids = obj_ids[1:]
@@ -57,9 +57,14 @@ def findBoxes(im, boxes, labels, class_label, segmented_im, mask):
             pass
         else :
             # not snow
-            boxes.append([x_min,y_min,x_max,y_max])
-            labels = np.append(labels,class_label)
-            mask[pos[0],pos[1],:] = segmented_im[pos[0],pos[1],:]
+            x_min = np.int64(x_min * 224 / width)
+            x_max = np.int64(x_max * 224 / width)
+            y_min = np.int64(y_min * 224 / height)
+            y_max = np.int64(y_max * 224 / height)
+            if (x_min != x_max) & (y_min != y_max):
+                boxes.append([x_min,y_min,x_max,y_max])
+                labels = np.append(labels,class_label)
+                mask[pos[0],pos[1],:] = segmented_im[pos[0],pos[1],:]
     return boxes, labels, mask
 
 def plotWithBoundingBoxes(seg_im,boxes,labels):
@@ -96,9 +101,12 @@ while True:
 
         # clean_segmented_image(segmented_obs)
         if np.mod(nb_of_steps, 5) == 0: 
-            boxes, classes = clean_segmented_image(segmented_obs)
-            output = plotWithBoundingBoxes(obs, boxes, classes)
-            output = cv.cvtColor(output, cv.COLOR_BGR2RGB)
+            width = obs.shape[1]
+            height = obs.shape[0]
+            obs = cv.resize(obs,(224,224))
+            boxes, classes = clean_segmented_image(segmented_obs, width, height)
+            # output = plotWithBoundingBoxes(obs, boxes, classes)
+            # output = cv.cvtColor(output, cv.COLOR_BGR2RGB)
             # cv.imshow('result of clean_segmented_image', output)
             # cv.waitKey(1)
             save_npz(obs, boxes, classes)

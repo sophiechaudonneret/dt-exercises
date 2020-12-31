@@ -1,2 +1,5 @@
 # path to model is by default relative to the package
 model_file: "/include/object_detection/weights/model.pt"
+lanewidth: 0.23
+
+safe_distance: 0.2
